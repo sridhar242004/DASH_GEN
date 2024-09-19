@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Real-Time Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.2/echarts.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <style>
+        /* Glassmorphism effect */
+        .glassmorphism {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        /* Neon Glowing Effect for Buttons */
+        .neon-btn {
+            background: #6c63ff;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-transform: uppercase;
+            font-size: 14px;
+            letter-spacing: 1.2px;
+            border-radius: 30px;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .neon-btn:hover {
+            background: #9e8eff;
+            box-shadow: 0px 0px 15px #6c63ff, 0px 0px 20px #6c63ff, 0px 0px 30px #6c63ff;
+        }
+
+        /* Smooth Chart Loading Animation */
+        .chart-container {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+        }
+
+        .chart-container.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Responsive Card Hover Effects */
+        .hover-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0px 10px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        /* Custom Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #ffffff;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        /* Enhanced Loading Spinner */
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 10px solid rgba(255, 255, 255, 0.3);
+            border-top: 10px solid #6c63ff;
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            animation: spin 1.5s linear infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-200 min-h-screen">
+    <!-- Loading Spinner -->
+    <div id="loading"></div>
+
+    <div class="container mx-auto p-4">
+        <header class="mb-8">
+            <div class="flex justify-between items-center">
+                <h1 class="text-5xl font-extrabold text-indigo-600 dark:text-indigo-400">Advanced Dynamic Dashboard</h1>
+                <button id="toggleDarkMode" class="neon-btn">
+                    Toggle Dark Mode
+                </button>
+            </div>
+            <p class="text-center text-gray-600 dark:text-gray-400 mt-2">Upload your CSV or Excel file for real-time analysis</p>
+        </header>
+
+        <div class="mb-8 p-6 glassmorphism hover-card transition-all">
+            <h2 class="text-3xl font-semibold mb-4">Data Input</h2>
+            <div class="flex flex-col sm:flex-row gap-4">
+                <label class="flex-1 flex flex-col">
+                    <span class="mb-2">Upload CSV or Excel file:</span>
+                    <input type="file" accept=".csv,.xlsx" id="fileUpload"
+                        class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" />
+                </label>
+            </div>
+        </div>
+
+        <!-- Chart Section -->
+        <div id="chartContainer" class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+            <!-- Charts will be dynamically inserted here -->
+        </div>
+
+        <!-- Filter Section -->
+        <div class="mb-8 glassmorphism p-6 hover-card transition-all">
+            <h2 class="text-3xl font-semibold mb-4">Dynamic Filters</h2>
+            <div id="filterContainer" class="flex flex-wrap gap-4"></div>
+        </div>
+
+        <!-- Data Table Section -->
+        <div class="glassmorphism p-6 hover-card transition-all">
+            <h2 class="text-3xl font-semibold mb-4">Data Table</h2>
+            <div class="overflow-x-auto custom-scrollbar">
+                <table id="dataTable" class="min-w-full divide-y divide-gray-300 dark:divide-gray-700">
+                    <thead class="bg-gray-50 dark:bg-gray-700">
+                        <tr id="tableHeader"></tr>
+                    </thead>
+                    <tbody id="tableBody"
+                        class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let data = [];
+        let charts = {};
+        let currentFilters = {};
+
+        const fileUpload = document.getElementById('fileUpload');
+        const loadingSpinner = document.getElementById('loading');
+        const body = document.body;
+
+        fileUpload.addEventListener('change', handleFileUpload);
+
+        document.getElementById('toggleDarkMode').addEventListener('click', () => {
+            body.classList.toggle('dark');
+        });
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+
+            if (!file.name.endsWith('.csv') && !file.name.endsWith('.xlsx')) {
+                showToast('Error', 'Invalid file type. Please upload a CSV or Excel file.', 'error');
+                return;
+            }
+
+            loadingSpinner.style.display = 'block'; // Show loading spinner
+
+            reader.onload = function (e) {
+                if (file.name.endsWith('.csv')) {
+                    Papa.parse(e.target.result, {
+                        complete: function (results) {
+                            processData(results.data);
+                        }
+                    });
+                } else if (file.name.endsWith('.xlsx')) {
+                    const workbook = XLSX.read(e.target.result, { type: 'binary' });
+                    const sheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+                    const csvData = XLSX.utils.sheet_to_csv(worksheet);
+                    Papa.parse(csvData, {
+                        complete: function (results) {
+                            processData(results.data);
+                        }
+                    });
+                }
+            };
+
+            if (file.name.endsWith('.csv')) {
+                reader.readAsText(file);
+            } else if (file.name.endsWith('.xlsx')) {
+                reader.readAsBinaryString(file);
+            }
+        }
+
+        function processData(rawData) {
+            try {
+                const headers = rawData[0];
+                data = rawData.slice(1).map(row => {
+                    return headers.reduce((obj, header, index) => {
+                        obj[header] = row[index];
+                        return obj;
+                    }, {});
+                });
+                updateDashboard();
+                loadingSpinner.style.display = 'none'; // Hide loading spinner
+                showToast('Success', 'Data uploaded successfully!', 'success');
+            } catch (error) {
+                showToast('Error', 'Failed to process data. Please check the file format.', 'error');
+            }
+        }
+
+        function updateDashboard() {
+            updateTable();
+            updateFilters();
+            createDynamicCharts();
+        }
+
+        function updateTable() {
+            const tableHeader = document.getElementById('tableHeader');
+            const tableBody = document.getElementById('tableBody');
+
+            tableHeader.innerHTML = '';
+            tableBody.innerHTML = '';
+
+            if (data.length === 0) return;
+
+            const headers = Object.keys(data[0]);
+
+            headers.forEach(header => {
+                const th = document.createElement('th');
+                th.textContent = header;
+                th.className = 'px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300';
+                tableHeader.appendChild(th);
+            });
+
+            data.forEach(row => {
+                const tr = document.createElement('tr');
+                headers.forEach(header => {
+                    const td = document.createElement('td');
+                    td.textContent = row[header];
+                    td.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300';
+                    tr.appendChild(td);
+                });
+                tableBody.appendChild(tr);
+            });
+        }
+
+        function updateFilters() {
+            const filterContainer = document.getElementById('filterContainer');
+            filterContainer.innerHTML = '';
+
+            if (data.length === 0) return;
+
+            const headers = Object.keys(data[0]);
+
+            headers.forEach(field => {
+                const uniqueValues = [...new Set(data.map(row => row[field]))];
+
+                if (uniqueValues.length > 1 && uniqueValues.length <= 10) {
+                    const filterDiv = document.createElement('div');
+                    filterDiv.innerHTML = `
+                        <label class="block text-sm font-medium mb-1">${field}</label>
+                        <select data-field="${field}" class="block w-40 bg-gray-200 dark:bg-gray-700 rounded p-2">
+                            <option value="">All</option>
+                            ${uniqueValues.map(value => `<option value="${value}">${value}</option>`).join('')}
+                        </select>
+                    `;
+                    filterDiv.querySelector('select').addEventListener('change', handleFilterChange);
+                    filterContainer.appendChild(filterDiv);
+                }
+            });
+        }
+
+        function handleFilterChange(event) {
+            const field = event.target.dataset.field;
+            const value = event.target.value;
+            if (value) {
+                currentFilters[field] = value;
+            } else {
+                delete currentFilters[field];
+            }
+            filterData();
+            updateTable();
+            createDynamicCharts();
+        }
+
+        function filterData() {
+            let filteredData = [...data];
+            Object.keys(currentFilters).forEach(field => {
+                const filterValue = currentFilters[field];
+                filteredData = filteredData.filter(row => row[field] === filterValue);
+            });
+            return filteredData;
+        }
+
+        function createDynamicCharts() {
+            const chartContainer = document.getElementById('chartContainer');
+            chartContainer.innerHTML = ''; // Clear existing charts
+
+            const filteredData = filterData();
+
+            const fields = Object.keys(filteredData[0]);
+            fields.forEach((field, index) => {
+                const uniqueValues = [...new Set(filteredData.map(row => row[field]))];
+
+                const chartDiv = document.createElement('div');
+                chartDiv.className = 'w-full h-64 chart-container';
+                chartContainer.appendChild(chartDiv);
+
+                setTimeout(() => {
+                    chartDiv.classList.add('visible'); // Apply the animation class
+
+                    const chart = echarts.init(chartDiv);
+                    let option = {};
+
+                    if (uniqueValues.length <= 10) {
+                        const valueCounts = uniqueValues.map(value => ({
+                            name: value,
+                            value: filteredData.filter(row => row[field] === value).length
+                        }));
+
+                        option = {
+                            title: {
+                                text: `Distribution of ${field}`,
+                                left: 'center'
+                            },
+                            tooltip: {
+                                trigger: 'item'
+                            },
+                            series: [
+                                {
+                                    name: field,
+                                    type: 'pie',
+                                    radius: '50%',
+                                    data: valueCounts,
+                                    emphasis: {
+                                        itemStyle: {
+                                            shadowBlur: 10,
+                                            shadowOffsetX: 0,
+                                            shadowColor: 'rgba(0, 0, 0, 0.5)'
+                                        }
+                                    }
+                                }
+                            ]
+                        };
+                    } else {
+                        const valueCounts = uniqueValues.map(value => ({
+                            name: value,
+                            value: filteredData.filter(row => row[field] === value).length
+                        }));
+
+                        option = {
+                            title: {
+                                text: `Bar Chart of ${field}`,
+                                left: 'center'
+                            },
+                            tooltip: {
+                                trigger: 'axis'
+                            },
+                            xAxis: {
+                                type: 'category',
+                                data: uniqueValues
+                            },
+                            yAxis: {
+                                type: 'value'
+                            },
+                            series: [
+                                {
+                                    name: field,
+                                    type: 'bar',
+                                    data: valueCounts.map(item => item.value),
+                                    emphasis: {
+                                        itemStyle: {
+                                            shadowBlur: 10,
+                                            shadowOffsetX:  0,
+                                            shadowColor: 'rgba(0, 0, 0, 0.5)'
+                                        }
+                                    }
+                                }
+                            ]
+                        };
+                    }
+
+                    chart.setOption(option);
+                }, index * 300); // Delayed animation for each chart
+            });
+        }
+
+        function showToast(title, message, type) {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type === 'success' ? 'bg-green-500' : 'bg-red-500'}`;
+            toast.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <h2 class="text-lg font-bold">${title}</h2>
+                    <button class="text-lg font-bold text-gray-500 hover:text-gray-800 transition-all">
+                        &times;
+                    </button>
+                </div>
+                <p class="text-sm">${message}</p>
+            `;
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+    </script>
+</body>
+
+</html>
